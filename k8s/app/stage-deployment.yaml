@@ -1,0 +1,85 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stage-deployment
+  namespace: gestion-projet
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stage-service
+  template:
+    metadata:
+      labels:
+        app: stage-service
+    spec:
+      containers:
+        - name: stage-service
+          image: nour292/stage-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_USERNAME
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: JWT_SECRET
+            - name: AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: stage-config
+                  key: AUTH_SERVICE_URL
+            - name: APP_UPLOAD_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: stage-config
+                  key: APP_UPLOAD_DIR
+          volumeMounts:
+            - name: uploads-storage
+              mountPath: /app/uploads/stage
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 20
+      volumes:
+        - name: uploads-storage
+          persistentVolumeClaim:
+            claimName: uploads-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stage-service
+  namespace: gestion-projet
+spec:
+  type: ClusterIP
+  selector:
+    app: stage-service
+  ports:
+    - port: 8082
+      targetPort: 8082

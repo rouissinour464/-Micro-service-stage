@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: stage-config
+  namespace: gestion-projet
+data:
+  AUTH_SERVICE_URL: "http://auth-service:8081"
+  APP_UPLOAD_DIR: "/app/uploads/stage"
