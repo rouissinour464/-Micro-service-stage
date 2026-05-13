@@ -33,21 +33,6 @@ pipeline {
                 checkout scm
             }
         }
-
-        /* =======================
-           CREATE UPLOAD DIRECTORY
-        ======================= */
-        stage('Create Upload Directory') {
-            steps {
-                sh '''
-                    set -eux
-
-                    sudo mkdir -p /data/uploads/stage
-                    sudo chmod -R 777 /data/uploads
-                '''
-            }
-        }
-
         /* =======================
            BUILD
         ======================= */
