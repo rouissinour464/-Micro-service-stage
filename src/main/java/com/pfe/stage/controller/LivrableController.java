@@ -39,14 +39,26 @@ public class LivrableController {
             @RequestPart MultipartFile file,
             Principal principal
     ) {
-        return livrableService.deposer(
-                demandeId, titre, description, typeLivrable, file, principal
-        );
+        return livrableService.deposer(demandeId, titre, description, typeLivrable, file, principal);
+    }
+
+    /* ===================== UPDATE ===================== */
+
+    @PutMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('ROLE_ETUDIANT')")
+    public LivrableResponse update(
+            @PathVariable Long id,
+            @RequestParam String titre,
+            @RequestParam(required = false) String description,
+            @RequestParam TypeLivrable typeLivrable,
+            @RequestPart(required = false) MultipartFile file,
+            Principal principal
+    ) {
+        return livrableService.update(id, titre, description, typeLivrable, file, principal);
     }
 
     /* ===================== ETUDIANT ===================== */
 
-    // ✅ FIX: aligné avec stageService.js getMesLivrables()
     @GetMapping("/mes-livrables")
     @PreAuthorize("hasAuthority('ROLE_ETUDIANT')")
     public List<LivrableResponse> mesLivrables(Principal principal) {
@@ -55,7 +67,6 @@ public class LivrableController {
 
     /* ===================== ENCADRANT ===================== */
 
-    // ✅ FIX: aligné avec stageService.js getLivrablesEncadrant()
     @GetMapping("/mes-etudiants")
     @PreAuthorize("hasAuthority('ROLE_ENCADRANT')")
     public List<LivrableResponse> livrablesEncadrant(Principal principal) {
@@ -84,8 +95,7 @@ public class LivrableController {
 
     @GetMapping("/{id}/download")
     @PreAuthorize("hasAnyAuthority('ROLE_ETUDIANT','ROLE_ENCADRANT')")
-    public ResponseEntity<Resource> download(@PathVariable Long id)
-            throws MalformedURLException {
+    public ResponseEntity<Resource> download(@PathVariable Long id) throws MalformedURLException {
 
         String chemin = livrableService.getChemin(id);
 
@@ -100,23 +110,28 @@ public class LivrableController {
             return ResponseEntity.notFound().build();
         }
 
-        String filename = file.getFileName().toString();
-
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .header(
-                        HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + filename + "\""
-                )
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + file.getFileName() + "\"")
                 .body(resource);
     }
 
-    /* ===================== DELETE ===================== */
+    /* ===================== DELETE ETUDIANT ===================== */
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('ROLE_ETUDIANT')")
     public ResponseEntity<Void> delete(@PathVariable Long id, Principal principal) {
         livrableService.delete(id, principal);
+        return ResponseEntity.noContent().build();
+    }
+
+    /* ===================== DELETE ENCADRANT ===================== */
+
+    @DeleteMapping("/{id}/encadrant")
+    @PreAuthorize("hasAuthority('ROLE_ENCADRANT')")
+    public ResponseEntity<Void> deleteByEncadrant(@PathVariable Long id, Principal principal) {
+        livrableService.deleteByEncadrant(id, principal);
         return ResponseEntity.noContent().build();
     }
 }

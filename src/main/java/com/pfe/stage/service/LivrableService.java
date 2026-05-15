@@ -28,7 +28,7 @@ public class LivrableService {
 
     private final LivrableRepository livrableRepo;
     private final DemandeStageRepository demandeRepo;
-    private final CommentaireRepository commentaireRepo; // ✅ FIX: ajout
+    private final CommentaireRepository commentaireRepo;
     private final FileStorageService fileStorage;
     private final SecurityUtils securityUtils;
     private final AuthClient authClient;
@@ -41,21 +41,16 @@ public class LivrableService {
 
     @Transactional
     public LivrableResponse deposer(
-            Long demandeId,
-            String titre,
-            String description,
-            TypeLivrable type,
-            MultipartFile file,
-            Principal principal
+            Long demandeId, String titre, String description,
+            TypeLivrable type, MultipartFile file, Principal principal
     ) {
         Long etudiantId = securityUtils.getCurrentUserId(principal);
 
         DemandeStage demande = demandeRepo.findById(demandeId)
                 .orElseThrow(() -> new EntityNotFoundException("Demande introuvable : " + demandeId));
 
-        if (!demande.getEtudiantId().equals(etudiantId)) {
+        if (!demande.getEtudiantId().equals(etudiantId))
             throw new IllegalArgumentException("Accès interdit");
-        }
 
         String chemin = fileStorage.store(file);
 
@@ -72,6 +67,39 @@ public class LivrableService {
 
         Livrable saved = livrableRepo.save(livrable);
         log.info("Livrable déposé : id={}, étudiant={}", saved.getId(), etudiantId);
+        return toResponse(saved);
+    }
+
+    /* =====================================================
+       UPDATE (étudiant — ses propres livrables)
+       ===================================================== */
+
+    @Transactional
+    public LivrableResponse update(
+            Long id, String titre, String description,
+            TypeLivrable type, MultipartFile file, Principal principal
+    ) {
+        Long etudiantId = securityUtils.getCurrentUserId(principal);
+        Livrable livrable = findById(id);
+
+        if (!livrable.getEtudiantId().equals(etudiantId))
+            throw new IllegalArgumentException("Modification interdite");
+
+        livrable.setTitre(titre);
+        livrable.setDescription(description);
+        livrable.setTypeLivrable(type);
+
+        // Nouveau fichier optionnel
+        if (file != null && !file.isEmpty()) {
+            fileStorage.delete(livrable.getCheminFichier());   // supprimer l'ancien
+            livrable.setNomFichier(file.getOriginalFilename());
+            livrable.setCheminFichier(fileStorage.store(file));
+            livrable.setTypeMime(file.getContentType());
+            livrable.setTailleFichier(file.getSize());
+        }
+
+        Livrable saved = livrableRepo.save(livrable);
+        log.info("Livrable mis à jour : id={}, étudiant={}", id, etudiantId);
         return toResponse(saved);
     }
 
@@ -118,7 +146,7 @@ public class LivrableService {
     }
 
     /* =====================================================
-       DELETE
+       DELETE — étudiant (son propre livrable)
        ===================================================== */
 
     @Transactional
@@ -126,17 +154,37 @@ public class LivrableService {
         Long etudiantId = securityUtils.getCurrentUserId(principal);
         Livrable livrable = findById(id);
 
-        if (!livrable.getEtudiantId().equals(etudiantId)) {
+        if (!livrable.getEtudiantId().equals(etudiantId))
             throw new IllegalArgumentException("Suppression interdite");
-        }
 
-        // ✅ FIX: supprimer les commentaires liés avant de supprimer le livrable
         commentaireRepo.deleteByLivrableId(id);
-
         fileStorage.delete(livrable.getCheminFichier());
         livrableRepo.delete(livrable);
 
-        log.info("Livrable supprimé : id={}, étudiant={}", id, etudiantId);
+        log.info("Livrable supprimé (étudiant) : id={}, étudiant={}", id, etudiantId);
+    }
+
+    /* =====================================================
+       DELETE — encadrant (livrables de ses étudiants)
+       ===================================================== */
+
+    @Transactional
+    public void deleteByEncadrant(Long id, Principal principal) {
+        Long encadrantId = securityUtils.getCurrentUserId(principal);
+        Livrable livrable = findById(id);
+
+        // Vérifier que le livrable appartient bien à un étudiant encadré
+        boolean estEncadrant = livrableRepo.findByEncadrantId(encadrantId)
+                .stream().anyMatch(l -> l.getId().equals(id));
+
+        if (!estEncadrant)
+            throw new IllegalArgumentException("Suppression interdite : ce livrable ne fait pas partie de vos étudiants");
+
+        commentaireRepo.deleteByLivrableId(id);
+        fileStorage.delete(livrable.getCheminFichier());
+        livrableRepo.delete(livrable);
+
+        log.info("Livrable supprimé (encadrant) : id={}, encadrant={}", id, encadrantId);
     }
 
     /* =====================================================
@@ -149,16 +197,15 @@ public class LivrableService {
     }
 
     private String getFullName(Long userId) {
-        return userCache.computeIfAbsent(userId, id -> {
+        return userCache.computeIfAbsent(userId, uid -> {
             try {
-                UserResponse user = authClient.getUserById(id);
-                if (user != null && user.getFullName() != null && !user.getFullName().isBlank()) {
+                UserResponse user = authClient.getUserById(uid);
+                if (user != null && user.getFullName() != null && !user.getFullName().isBlank())
                     return user.getFullName();
-                }
             } catch (Exception e) {
-                log.warn("Feign getUserById({}) failed : {}", id, e.getMessage());
+                log.warn("Feign getUserById({}) failed : {}", uid, e.getMessage());
             }
-            return "Étudiant #" + id;
+            return "Étudiant #" + uid;
         });
     }
 
