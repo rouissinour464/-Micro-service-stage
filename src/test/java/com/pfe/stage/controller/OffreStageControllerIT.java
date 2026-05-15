@@ -1,6 +1,7 @@
 package com.pfe.stage.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pfe.stage.config.TestSecurityConfig;
 import com.pfe.stage.dto.request.OffreStageRequest;
 import com.pfe.stage.dto.response.OffreStageResponse;
 import com.pfe.stage.security.JwtAuthenticationFilter;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
@@ -25,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(controllers = OffreStageController.class)
+@Import(TestSecurityConfig.class) // ✅ Charge la config sécurité de test
 class OffreStageControllerIT {
 
     @Autowired

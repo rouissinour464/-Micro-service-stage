@@ -15,7 +15,17 @@ spring:
     init:
       mode: always
 
+# ✅ Chemin accessible sur Jenkins (répertoire temporaire système)
+app:
+  upload:
+    dir: /tmp/stage-uploads-test
+
 jwt:
   secret: test-secret-key-for-testing-only-404E635266556A586E3272357538782F413F4428
   expiration-ms: 900000
   refresh-expiration-ms: 604800000
+
+# ✅ Valeur factice pour éviter l'erreur de résolution de @Value
+auth:
+  service:
+    url: http://localhost:9999
