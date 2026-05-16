@@ -30,6 +30,9 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authorizeHttpRequests(auth -> auth
+                // ✅ Actuator accessible sans authentification (requis pour les probes K8s)
+                .requestMatchers("/actuator/**").permitAll()
+
                 .requestMatchers("/api/files/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/offres", "/api/offres/*").permitAll()
                 .requestMatchers("/api/offres/all").hasAuthority("ROLE_ADMIN")
