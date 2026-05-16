@@ -43,37 +43,13 @@ auth:
     url: ${AUTH_SERVICE_URL:http://auth-service:8081}
 
 # =========================
-# ACTUATOR / PROBES
+# ACTUATOR
 # =========================
 management:
   endpoints:
     web:
       exposure:
         include: health, info
-
   endpoint:
     health:
-      # ✅ Active les endpoints /actuator/health/liveness et /readiness
-      probes:
-        enabled: true
       show-details: always
-      group:
-        # liveness  → vérifie uniquement que la JVM est vivante
-        # utilisé par startupProbe + livenessProbe dans le Deployment
-        liveness:
-          include: livenessState, ping
-        # readiness → vérifie que la DB est joignable avant d'accepter du trafic
-        # utilisé par readinessProbe dans le Deployment
-        readiness:
-          include: readinessState, db
-
-  health:
-    livenessState:
-      enabled: true
-    readinessState:
-      enabled: true
-
-# Endpoints disponibles après déploiement :
-#   GET /actuator/health/liveness  → 200 UP  (JVM vivante, indépendant DB)
-#   GET /actuator/health/readiness → 200 UP  (DB connectée)
-#   GET /actuator/health           → vue globale
