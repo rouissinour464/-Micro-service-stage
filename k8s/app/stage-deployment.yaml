@@ -13,12 +13,10 @@ spec:
       labels:
         app: stage-service
     spec:
-      # ✅ Le conteneur tourne en root pour pouvoir écrire dans le volume
       securityContext:
         runAsUser: 0
         fsGroup: 0
 
-      # ✅ Init container : crée et chmod le dossier avant le démarrage
       initContainers:
         - name: init-uploads
           image: busybox
@@ -64,34 +62,34 @@ spec:
                 configMapKeyRef:
                   name: stage-config
                   key: APP_UPLOAD_DIR
+
           volumeMounts:
             - name: uploads-storage
               mountPath: /app/uploads/stage
 
-          # ✅ startupProbe : donne 3min au pod pour démarrer
-          #    empêche liveness de tuer le pod trop tôt
+          # ✅ 5min pour démarrer (30 × 10s) avant que liveness intervienne
           startupProbe:
             httpGet:
               path: /actuator/health
               port: 8082
-            failureThreshold: 18
+            failureThreshold: 30
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8082
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 10
-            failureThreshold: 3
+            failureThreshold: 5
 
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8082
-            initialDelaySeconds: 60
+            initialDelaySeconds: 10
             periodSeconds: 20
-            failureThreshold: 3
+            failureThreshold: 5
 
       volumes:
         - name: uploads-storage

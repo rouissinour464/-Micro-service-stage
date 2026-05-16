@@ -33,6 +33,7 @@ pipeline {
                 checkout scm
             }
         }
+
         /* =======================
            BUILD
         ======================= */
@@ -40,7 +41,6 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     chmod +x mvnw
                     ./mvnw clean compile
                 '''
@@ -54,9 +54,17 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
-                    ./mvnw test
+                    ./mvnw test -Dspring.profiles.active=test
                 '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: '**/target/surefire-reports/*.xml'
+                }
+                failure {
+                    echo "❌ Unit Tests échoués — voir les rapports Surefire"
+                }
             }
         }
 
@@ -67,9 +75,17 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
-                    ./mvnw verify
+                    ./mvnw verify -Dspring.profiles.active=test
                 '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: '**/target/failsafe-reports/*.xml'
+                }
+                failure {
+                    echo "❌ Integration Tests échoués"
+                }
             }
         }
 
@@ -80,7 +96,6 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     ./mvnw clean package -DskipTests
                 '''
             }
@@ -93,7 +108,6 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     docker build -t ${IMAGE}:${TAG} .
                 '''
             }
@@ -109,14 +123,28 @@ pipeline {
                 ]) {
                     sh '''
                         set -eux
-
                         echo "$DOCKER_PASSWORD" | docker login -u ${REGISTRY} --password-stdin
-
                         docker push ${IMAGE}:${TAG}
-
                         docker logout
                     '''
                 }
+            }
+        }
+
+        /* =======================
+           PREPARE NODE
+           Crée le dossier uploads sur le nœud
+           avec les bonnes permissions
+        ======================= */
+        stage('Prepare Node') {
+            steps {
+                sh '''
+                    set -eux
+                    # ✅ Crée le dossier hostPath avant le déploiement
+                    # pour éviter AccessDeniedException au démarrage
+                    sudo mkdir -p /data/uploads/stage
+                    sudo chmod 777 /data/uploads/stage
+                '''
             }
         }
 
@@ -127,9 +155,7 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     kubectl apply -k k8s/app
-
                     kubectl get all -n ${NAMESPACE}
                 '''
             }
@@ -142,10 +168,12 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     kubectl rollout restart deployment stage-deployment -n ${NAMESPACE}
 
-                    kubectl rollout status deployment stage-deployment -n ${NAMESPACE} --timeout=180s
+                    # ✅ 5min au lieu de 3min
+                    # Spring Boot + Neon DB (cloud) = démarrage lent
+                    kubectl rollout status deployment stage-deployment \
+                        -n ${NAMESPACE} --timeout=300s
                 '''
             }
         }
@@ -157,27 +185,42 @@ pipeline {
             steps {
                 sh '''
                     set -eux
-
                     kubectl get pods -n ${NAMESPACE}
-
                     kubectl get pvc -n ${NAMESPACE}
-
                     kubectl get pv
+
+                    # ✅ Afficher les logs du pod pour confirmer démarrage OK
+                    POD=$(kubectl get pod -n ${NAMESPACE} \
+                          -l app=stage-service \
+                          -o jsonpath="{.items[0].metadata.name}")
+
+                    echo "=== Logs du pod : $POD ==="
+                    kubectl logs -n ${NAMESPACE} ${POD} --tail=50
                 '''
             }
         }
     }
 
     post {
-
         success {
             echo "✅ STAGE-SERVICE PIPELINE SUCCESS 🎉"
         }
-
         failure {
+            // ✅ Affiche les logs du pod en cas d'échec
+            sh '''
+                echo "=== Diagnostic pod en échec ==="
+                kubectl get pods -n gestion-projet -l app=stage-service || true
+                POD=$(kubectl get pod -n gestion-projet \
+                      -l app=stage-service \
+                      -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
+                if [ -n "$POD" ]; then
+                    kubectl logs -n gestion-projet ${POD} --tail=80 || true
+                    kubectl logs -n gestion-projet ${POD} --previous --tail=80 || true
+                    kubectl describe pod -n gestion-projet ${POD} | tail -30 || true
+                fi
+            '''
             echo "❌ STAGE-SERVICE PIPELINE FAILED ❌"
         }
-
         always {
             cleanWs()
         }
