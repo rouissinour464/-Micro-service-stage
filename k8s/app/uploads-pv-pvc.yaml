@@ -5,7 +5,8 @@ metadata:
   labels:
     app: stage-service
 spec:
-  storageClassName: local-storage
+  # ✅ local-path = provisioner natif K3s (rancher.io/local-path)
+  storageClassName: local-path
   capacity:
     storage: 5Gi
   accessModes:
@@ -21,7 +22,8 @@ metadata:
   name: uploads-pvc
   namespace: gestion-projet
 spec:
-  storageClassName: local-storage
+  # ✅ Doit correspondre exactement au storageClassName du PV ci-dessus
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   resources:

@@ -25,18 +25,12 @@ pipeline {
 
     stages {
 
-        /* =======================
-           SOURCE CODE
-        ======================= */
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        /* =======================
-           BUILD
-        ======================= */
         stage('Build') {
             steps {
                 sh '''
@@ -47,51 +41,24 @@ pipeline {
             }
         }
 
-        /* =======================
-           UNIT TESTS
-        ======================= */
         stage('Unit Tests') {
             steps {
                 sh '''
                     set -eux
-                    ./mvnw test -Dspring.profiles.active=test
+                    ./mvnw test
                 '''
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true,
-                          testResults: '**/target/surefire-reports/*.xml'
-                }
-                failure {
-                    echo "❌ Unit Tests échoués — voir les rapports Surefire"
-                }
             }
         }
 
-        /* =======================
-           INTEGRATION TESTS
-        ======================= */
         stage('Integration Tests') {
             steps {
                 sh '''
                     set -eux
-                    ./mvnw verify -Dspring.profiles.active=test
+                    ./mvnw verify
                 '''
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true,
-                          testResults: '**/target/failsafe-reports/*.xml'
-                }
-                failure {
-                    echo "❌ Integration Tests échoués"
-                }
             }
         }
 
-        /* =======================
-           PACKAGE JAR
-        ======================= */
         stage('Package') {
             steps {
                 sh '''
@@ -101,9 +68,6 @@ pipeline {
             }
         }
 
-        /* =======================
-           DOCKER BUILD
-        ======================= */
         stage('Docker Build') {
             steps {
                 sh '''
@@ -113,9 +77,6 @@ pipeline {
             }
         }
 
-        /* =======================
-           DOCKER PUSH
-        ======================= */
         stage('Docker Push') {
             steps {
                 withCredentials([
@@ -131,26 +92,6 @@ pipeline {
             }
         }
 
-        /* =======================
-           PREPARE NODE
-           Crée le dossier uploads sur le nœud
-           avec les bonnes permissions
-        ======================= */
-        stage('Prepare Node') {
-            steps {
-                sh '''
-                    set -eux
-                    # ✅ Crée le dossier hostPath avant le déploiement
-                    # pour éviter AccessDeniedException au démarrage
-                    sudo mkdir -p /data/uploads/stage
-                    sudo chmod 777 /data/uploads/stage
-                '''
-            }
-        }
-
-        /* =======================
-           DEPLOY TO K3S
-        ======================= */
         stage('Deploy to K3s') {
             steps {
                 sh '''
@@ -161,26 +102,20 @@ pipeline {
             }
         }
 
-        /* =======================
-           RESTART STAGE SERVICE
-        ======================= */
         stage('Restart Stage Service') {
             steps {
                 sh '''
                     set -eux
+
                     kubectl rollout restart deployment stage-deployment -n ${NAMESPACE}
 
-                    # ✅ 5min au lieu de 3min
-                    # Spring Boot + Neon DB (cloud) = démarrage lent
+                    # ✅ CORRECTION : 660s > 600s (fenêtre max startupProbe)
                     kubectl rollout status deployment stage-deployment \
-                        -n ${NAMESPACE} --timeout=300s
+                        -n ${NAMESPACE} --timeout=660s
                 '''
             }
         }
 
-        /* =======================
-           CHECK PODS
-        ======================= */
         stage('Check Pods') {
             steps {
                 sh '''
@@ -188,14 +123,6 @@ pipeline {
                     kubectl get pods -n ${NAMESPACE}
                     kubectl get pvc -n ${NAMESPACE}
                     kubectl get pv
-
-                    # ✅ Afficher les logs du pod pour confirmer démarrage OK
-                    POD=$(kubectl get pod -n ${NAMESPACE} \
-                          -l app=stage-service \
-                          -o jsonpath="{.items[0].metadata.name}")
-
-                    echo "=== Logs du pod : $POD ==="
-                    kubectl logs -n ${NAMESPACE} ${POD} --tail=50
                 '''
             }
         }
@@ -205,22 +132,22 @@ pipeline {
         success {
             echo "✅ STAGE-SERVICE PIPELINE SUCCESS 🎉"
         }
+
         failure {
-            // ✅ Affiche les logs du pod en cas d'échec
-            sh '''
-                echo "=== Diagnostic pod en échec ==="
-                kubectl get pods -n gestion-projet -l app=stage-service || true
-                POD=$(kubectl get pod -n gestion-projet \
-                      -l app=stage-service \
-                      -o jsonpath="{.items[0].metadata.name}" 2>/dev/null || echo "")
-                if [ -n "$POD" ]; then
-                    kubectl logs -n gestion-projet ${POD} --tail=80 || true
-                    kubectl logs -n gestion-projet ${POD} --previous --tail=80 || true
-                    kubectl describe pod -n gestion-projet ${POD} | tail -30 || true
-                fi
-            '''
             echo "❌ STAGE-SERVICE PIPELINE FAILED ❌"
+            // ✅ AJOUT : logs de debug automatiques en cas d'échec
+            sh '''
+                echo "=== DESCRIBE POD ==="
+                kubectl describe pod -l app=stage-service \
+                    -n gestion-projet || true
+                echo "=== LOGS DU CONTENEUR ==="
+                kubectl logs -l app=stage-service \
+                    -n gestion-projet --tail=80 || true
+                echo "=== ETAT DES PVC ==="
+                kubectl get pvc -n gestion-projet || true
+            '''
         }
+
         always {
             cleanWs()
         }

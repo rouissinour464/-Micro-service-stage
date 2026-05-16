@@ -20,7 +20,10 @@ spec:
       initContainers:
         - name: init-uploads
           image: busybox
-          command: ["sh", "-c", "mkdir -p /app/uploads/stage && chmod 777 /app/uploads/stage"]
+          command:
+            - sh
+            - -c
+            - mkdir -p /app/uploads/stage && chmod 777 /app/uploads/stage
           volumeMounts:
             - name: uploads-storage
               mountPath: /app/uploads/stage
@@ -31,6 +34,7 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8082
+
           env:
             - name: SPRING_DATASOURCE_URL
               valueFrom:
@@ -67,29 +71,44 @@ spec:
             - name: uploads-storage
               mountPath: /app/uploads/stage
 
-          # ✅ 5min pour démarrer (30 × 10s) avant que liveness intervienne
+          # ✅ CORRECTION 1 : startupProbe sur /liveness (ping uniquement)
+          #    failureThreshold 30→60 = 10 minutes pour Spring Boot + Neon DB
           startupProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: 8082
-            failureThreshold: 30
+            failureThreshold: 60
             periodSeconds: 10
 
+          # ✅ CORRECTION 2 : readinessProbe sur /readiness (vérifie la DB)
+          #    Le pod ne reçoit du trafic que quand la DB répond
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness
               port: 8082
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 5
+            initialDelaySeconds: 0
+            periodSeconds: 15
+            failureThreshold: 4
+            successThreshold: 1
 
+          # ✅ CORRECTION 3 : livenessProbe sur /liveness uniquement
+          #    Ne redémarre pas le pod si Neon DB est temporairement lente
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness
               port: 8082
-            initialDelaySeconds: 10
-            periodSeconds: 20
-            failureThreshold: 5
+            initialDelaySeconds: 0
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ✅ AJOUT : limits pour éviter un OOMKill silencieux
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
 
       volumes:
         - name: uploads-storage
