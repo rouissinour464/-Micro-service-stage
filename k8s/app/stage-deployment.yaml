@@ -66,6 +66,8 @@ spec:
                 configMapKeyRef:
                   name: stage-config
                   key: APP_UPLOAD_DIR
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Dapp.upload.dir=/app/uploads/stage"
 
           volumeMounts:
             - name: uploads-storage
