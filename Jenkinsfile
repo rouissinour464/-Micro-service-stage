@@ -18,90 +18,114 @@ pipeline {
     environment {
         REGISTRY   = "nour292"
         IMAGE      = "${REGISTRY}/stage-service"
-        TAG        = "latest"
+        TAG        = "${BUILD_NUMBER}"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
         NAMESPACE  = "gestion-projet"
+
+        SONAR_PROJECT_KEY = "rouissinour464_micro-service-stage"
+        SONAR_ORG = "rouissinour464"
     }
 
     stages {
 
+        /* ======================= */
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Build') {
+        /* ✅ BUILD + TEST (fusion propre) */
+        stage('Build & Test') {
             steps {
                 sh '''
                     set -eux
                     chmod +x mvnw
-                    ./mvnw clean compile
+                    ./mvnw clean verify
                 '''
             }
         }
 
-        stage('Unit Tests') {
+        /* ✅ SONARCLOUD */
+        stage('SonarCloud') {
             steps {
-                sh '''
-                    set -eux
-                    ./mvnw test
-                '''
+                withSonarQubeEnv('SonarCloud') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            ./mvnw sonar:sonar \
+                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                            -Dsonar.organization=${SONAR_ORG} \
+                            -Dsonar.host.url=https://sonarcloud.io \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
+                }
             }
         }
 
-        stage('Integration Tests') {
+        /* ✅ QUALITY GATE */
+        stage('Quality Gate') {
             steps {
-                sh '''
-                    set -eux
-                    ./mvnw verify
-                '''
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
             }
         }
 
-        stage('Package') {
+        /* ✅ DOCKER BUILD + PUSH */
+        stage('Docker Build & Push') {
             steps {
-                sh '''
-                    set -eux
-                    ./mvnw clean package -DskipTests
-                '''
-            }
-        }
-
-        stage('Docker Build') {
-            steps {
-                sh '''
-                    set -eux
-                    docker build -t ${IMAGE}:${TAG} .
-                '''
-            }
-        }
-
-        stage('Docker Push') {
-            steps {
-                withCredentials([
-                    string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')
-                ]) {
+                withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')]) {
                     sh '''
                         set -eux
+
                         echo "$DOCKER_PASSWORD" | docker login -u ${REGISTRY} --password-stdin
+
+                        docker build -t ${IMAGE}:${TAG} .
+                        docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
+
                         docker push ${IMAGE}:${TAG}
+                        docker push ${IMAGE}:latest
+
                         docker logout
                     '''
                 }
             }
         }
 
+        /* ✅ CHECK NODES (IMPORTANT) */
+        stage('Check Cluster Nodes') {
+            steps {
+                sh '''
+                    set -eux
+
+                    echo "=== CLUSTER NODES ==="
+                    kubectl get nodes
+
+                    NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" || true)
+
+                    if [ ! -z "$NOT_READY" ]; then
+                        echo "❌ Some nodes are NOT READY"
+                        kubectl get nodes
+                        exit 1
+                    fi
+
+                    echo "✅ ALL NODES READY"
+                '''
+            }
+        }
+
+        /* ✅ DEPLOY */
         stage('Deploy to K3s') {
             steps {
                 sh '''
                     set -eux
                     kubectl apply -k k8s/app
-                    kubectl get all -n ${NAMESPACE}
                 '''
             }
         }
 
+        /* ✅ RESTART */
         stage('Restart Stage Service') {
             steps {
                 sh '''
@@ -109,20 +133,20 @@ pipeline {
 
                     kubectl rollout restart deployment stage-deployment -n ${NAMESPACE}
 
-                    # ✅ CORRECTION : 660s > 600s (fenêtre max startupProbe)
                     kubectl rollout status deployment stage-deployment \
                         -n ${NAMESPACE} --timeout=660s
                 '''
             }
         }
 
-        stage('Check Pods') {
+        /* ✅ CHECK */
+        stage('Check Cluster') {
             steps {
                 sh '''
                     set -eux
                     kubectl get pods -n ${NAMESPACE}
+                    kubectl get svc -n ${NAMESPACE}
                     kubectl get pvc -n ${NAMESPACE}
-                    kubectl get pv
                 '''
             }
         }
@@ -130,21 +154,18 @@ pipeline {
 
     post {
         success {
-            echo "✅ STAGE-SERVICE PIPELINE SUCCESS 🎉"
+            echo "✅ STAGE-SERVICE PIPELINE SUCCESS 🚀"
         }
 
         failure {
-            echo "❌ STAGE-SERVICE PIPELINE FAILED ❌"
-            // ✅ AJOUT : logs de debug automatiques en cas d'échec
+            echo "❌ PIPELINE FAILED"
+
             sh '''
-                echo "=== DESCRIBE POD ==="
-                kubectl describe pod -l app=stage-service \
-                    -n gestion-projet || true
-                echo "=== LOGS DU CONTENEUR ==="
-                kubectl logs -l app=stage-service \
-                    -n gestion-projet --tail=80 || true
-                echo "=== ETAT DES PVC ==="
-                kubectl get pvc -n gestion-projet || true
+                echo "=== DEBUG ==="
+                kubectl get pods -n ${NAMESPACE} || true
+                kubectl describe pods -n ${NAMESPACE} || true
+                kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=80 || true
+                kubectl get events -n ${NAMESPACE} || true
             '''
         }
 
