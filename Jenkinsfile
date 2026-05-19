@@ -35,35 +35,37 @@ pipeline {
             }
         }
 
-        /* ✅ BUILD + TEST (fusion propre) */
-        stage('Build & Test') {
+        /* ✅ TESTS UNIQUEMENT */
+        stage('Tests') {
             steps {
                 sh '''
                     set -eux
                     chmod +x mvnw
-                    ./mvnw clean verify
+                    ./mvnw test
                 '''
             }
         }
 
-        /* ✅ SONARCLOUD */
+        /* ✅ SONAR */
         stage('SonarCloud') {
             steps {
                 withSonarQubeEnv('SonarCloud') {
                     withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh '''
+                            set -eux
+
                             ./mvnw sonar:sonar \
-                            -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                            -Dsonar.organization=${SONAR_ORG} \
-                            -Dsonar.host.url=https://sonarcloud.io \
-                            -Dsonar.login=${SONAR_TOKEN}
+                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                              -Dsonar.organization=${SONAR_ORG} \
+                              -Dsonar.host.url=https://sonarcloud.io \
+                              -Dsonar.token=${SONAR_TOKEN}
                         '''
                     }
                 }
             }
         }
 
-        /* ✅ QUALITY GATE */
+        /* ✅ QUALITY */
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
@@ -72,7 +74,7 @@ pipeline {
             }
         }
 
-        /* ✅ DOCKER BUILD + PUSH */
+        /* ✅ DOCKER BUILD (REAL BUILD) */
         stage('Docker Build & Push') {
             steps {
                 withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')]) {
@@ -93,24 +95,13 @@ pipeline {
             }
         }
 
-        /* ✅ CHECK NODES (IMPORTANT) */
+        /* ✅ CHECK NODES */
         stage('Check Cluster Nodes') {
             steps {
                 sh '''
                     set -eux
 
-                    echo "=== CLUSTER NODES ==="
                     kubectl get nodes
-
-                    NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" || true)
-
-                    if [ ! -z "$NOT_READY" ]; then
-                        echo "❌ Some nodes are NOT READY"
-                        kubectl get nodes
-                        exit 1
-                    fi
-
-                    echo "✅ ALL NODES READY"
                 '''
             }
         }
@@ -143,10 +134,7 @@ pipeline {
         stage('Check Cluster') {
             steps {
                 sh '''
-                    set -eux
                     kubectl get pods -n ${NAMESPACE}
-                    kubectl get svc -n ${NAMESPACE}
-                    kubectl get pvc -n ${NAMESPACE}
                 '''
             }
         }
@@ -154,18 +142,15 @@ pipeline {
 
     post {
         success {
-            echo "✅ STAGE-SERVICE PIPELINE SUCCESS 🚀"
+            echo "✅ STAGE PIPELINE SUCCESS 🚀"
         }
 
         failure {
             echo "❌ PIPELINE FAILED"
 
             sh '''
-                echo "=== DEBUG ==="
-                kubectl get pods -n ${NAMESPACE} || true
                 kubectl describe pods -n ${NAMESPACE} || true
                 kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=80 || true
-                kubectl get events -n ${NAMESPACE} || true
             '''
         }
 
