@@ -1,77 +1,95 @@
 # =========================
-# SERVER
+# CONFIGURATION DU SERVEUR
 # =========================
 server:
-  port: 8082
+  port: 8082   # Port sur lequel le microservice Stage/PFE écoute
 
 # =========================
-# SPRING CONFIG
+# CONFIGURATION SPRING
 # =========================
 spring:
 
   application:
-    name: stage-service
+    name: stage-service   # Nom du microservice (logs, monitoring, Kubernetes)
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL}        # URL PostgreSQL (définie via variable d’environnement)
+    username: ${SPRING_DATASOURCE_USERNAME}  # Username base de données
+    password: ${SPRING_DATASOURCE_PASSWORD}  # Mot de passe sécurisé
+    driver-class-name: org.postgresql.Driver  # Driver PostgreSQL
 
   jpa:
-
     hibernate:
-      ddl-auto: update
-
-    open-in-view: false
-    show-sql: false
-
+      ddl-auto: update   # Mise à jour automatique des tables (dev)
+    open-in-view: false  # Bonne pratique (évite lazy loading dans la vue)
+    show-sql: false      # Désactive affichage SQL
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect  # Adaptation PostgreSQL
 
   servlet:
-
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      max-file-size: 20MB        # Taille max fichier (livrable)
+      max-request-size: 20MB     # Taille max requête upload
 
 # =========================
-# JWT CONFIG
+# CONFIGURATION JWT
 # =========================
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET}   # Clé secrète pour signer les tokens JWT
 
 # =========================
-# FILE STORAGE CONFIG
+# STOCKAGE DES FICHIERS
 # =========================
 app:
-
   upload:
-    dir: ${APP_UPLOAD_DIR:/app/uploads/stage}
+    dir: ${APP_UPLOAD_DIR:/app/uploads/stage}  
+    # Dossier des livrables
+    # valeur par défaut si variable absente
 
 # =========================
-# FEIGN CONFIG
+# COMMUNICATION MICROSERVICE (FEIGN)
 # =========================
 auth:
-
   service:
-    url: ${AUTH_SERVICE_URL:http://auth-service:8081}
+    url: ${AUTH_SERVICE_URL:http://auth-service:8081}  
+    # URL du service d’authentification
 
 # =========================
-# ACTUATOR & PROMETHEUS
+# MONITORING (ACTUATOR + PROMETHEUS)
 # =========================
 management:
-
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus  # Endpoints exposés
 
   endpoint:
     health:
-      show-details: always
+      show-details: always  # Affiche détails du status
 
   metrics:
     tags:
-      application: stage-service
+      application: stage-service  # Tag pour Prometheus/Grafana
+
+# =========================
+# LOGGING (FORMAT JSON)
+# =========================
+logging:
+  level:
+    root: INFO                         # Niveau global
+    com.pfe.stage: DEBUG              # Logs appli (debug détaillé)
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+    org.springframework.web: INFO
+
+  pattern:
+    console: |
+      {"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z',UTC}",
+       "level":"%level",
+       "service":"stage-service",
+       "thread":"%thread",
+       "logger":"%logger{40}",
+       "message":"%replace(%msg){'\"','\\\"'}",
+       "trace":"%X{traceId:-}",
+       "span":"%X{spanId:-}"}%n

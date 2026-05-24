@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>{"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSS'Z',UTC}","level":"%level","service":"stage-service","thread":"%thread","logger":"%logger{40}","message":"%replace(%msg){'&quot;','\\&quot;'}","trace":"%X{traceId:-}","span":"%X{spanId:-}"}%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <logger name="com.pfe.stage" level="DEBUG" additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+    <logger name="org.springframework.security" level="INFO" additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+    <logger name="org.hibernate.SQL" level="WARN" additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+    <logger name="org.springframework.web" level="INFO" additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+
+    <root level="INFO">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </root>
+
+</configuration>
