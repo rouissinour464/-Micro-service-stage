@@ -105,7 +105,7 @@ pipeline {
                         git config user.email "${GIT_USER_EMAIL}"
                         git config user.name  "${GIT_USER_NAME}"
 
-                        git checkout -B main
+                        git checkout -B v1
 
                         sed -i "s|newTag:.*|newTag: \\"${TAG}\\"|g" k8s/app/kustomization.yaml
 
@@ -114,7 +114,7 @@ pipeline {
 
                         REMOTE=$(git remote get-url origin \
                             | sed "s|https://|https://${GIT_USER}:${GIT_TOKEN}@|")
-                        git push "$REMOTE" HEAD:main
+                        git push "$REMOTE" HEAD:v1
                     '''
                 }
             }
