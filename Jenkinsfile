@@ -57,20 +57,28 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false  // ✅ FIX: ne bloque plus le pipeline
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
 
-        stage('Docker Build & Push') {
+        stage('Docker Build') {
+            steps {
+                sh '''
+                    set -eux
+                    docker build -t ${IMAGE}:${TAG} .
+                '''
+            }
+        }
+
+        stage('Docker Push') {
             steps {
                 withCredentials([string(credentialsId: 'dockerhub-pass', variable: 'DOCKER_PASSWORD')]) {
                     sh '''
                         set -eux
                         echo "$DOCKER_PASSWORD" | docker login -u ${REGISTRY} --password-stdin
-                        docker build -t ${IMAGE}:${TAG} .
-                        docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
                         docker push ${IMAGE}:${TAG}
+                        docker tag  ${IMAGE}:${TAG} ${IMAGE}:latest
                         docker push ${IMAGE}:latest
                         docker logout
                     '''
