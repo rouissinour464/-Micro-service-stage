@@ -47,14 +47,14 @@ pipeline {
                               -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                               -Dsonar.organization=${SONAR_ORG} \
                               -Dsonar.host.url=https://sonarcloud.io \
-                              -Dsonar.token=${SONAR_TOKEN}
+                              -Dsonar.token=${SONAR_TOKEN} \
+                              -Dsonar.exclusions=src/test/**
                         '''
                     }
                 }
             }
         }
 
-        // ✅ CORRECTION : abortPipeline: false — le pipeline continue même si QG Failed
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
