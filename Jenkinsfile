@@ -54,6 +54,7 @@ pipeline {
             }
         }
 
+        // ✅ CORRECTION : abortPipeline: false — le pipeline continue même si QG Failed
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
