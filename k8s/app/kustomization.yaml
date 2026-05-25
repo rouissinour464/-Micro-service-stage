@@ -12,4 +12,4 @@ resources:
 # ← ajouter ceci
 images:
   - name: nour292/stage-service
-    newTag: "43"
+    newTag: "44"
