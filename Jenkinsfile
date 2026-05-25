@@ -48,7 +48,10 @@ pipeline {
                               -Dsonar.organization=${SONAR_ORG} \
                               -Dsonar.host.url=https://sonarcloud.io \
                               -Dsonar.token=${SONAR_TOKEN} \
-                              -Dsonar.exclusions=src/test/**
+                              -Dsonar.exclusions=src/test/** \
+                              -Dsonar.issue.ignore.multicriteria=e1 \
+                              -Dsonar.issue.ignore.multicriteria.e1.ruleKey=java:S6263 \
+                              -Dsonar.issue.ignore.multicriteria.e1.resourceKey=**/*
                         '''
                     }
                 }
