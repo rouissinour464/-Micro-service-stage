@@ -28,7 +28,7 @@ public class LivrableService {
 
     private final LivrableRepository livrableRepo;
     private final DemandeStageRepository demandeRepo;
-    private final CommentaireRepository commentaireRepo; // ✅ FIX: ajout
+    private final CommentaireRepository commentaireRepo;
     private final FileStorageService fileStorage;
     private final SecurityUtils securityUtils;
     private final AuthClient authClient;
@@ -76,6 +76,44 @@ public class LivrableService {
     }
 
     /* =====================================================
+       UPDATE (ÉTUDIANT)   ✅ FIX: méthode ajoutée
+       ===================================================== */
+
+    @Transactional
+    public LivrableResponse update(
+            Long id,
+            String titre,
+            String description,
+            TypeLivrable type,
+            MultipartFile file,
+            Principal principal
+    ) {
+        Long etudiantId = securityUtils.getCurrentUserId(principal);
+        Livrable livrable = findById(id);
+
+        if (!livrable.getEtudiantId().equals(etudiantId)) {
+            throw new IllegalArgumentException("Modification interdite");
+        }
+
+        livrable.setTitre(titre);
+        livrable.setDescription(description);
+        livrable.setTypeLivrable(type);
+
+        if (file != null && !file.isEmpty()) {
+            fileStorage.delete(livrable.getCheminFichier());
+            String chemin = fileStorage.store(file);
+            livrable.setNomFichier(file.getOriginalFilename());
+            livrable.setCheminFichier(chemin);
+            livrable.setTypeMime(file.getContentType());
+            livrable.setTailleFichier(file.getSize());
+        }
+
+        Livrable saved = livrableRepo.save(livrable);
+        log.info("Livrable mis à jour : id={}, étudiant={}", id, etudiantId);
+        return toResponse(saved);
+    }
+
+    /* =====================================================
        LISTES
        ===================================================== */
 
@@ -118,7 +156,7 @@ public class LivrableService {
     }
 
     /* =====================================================
-       DELETE
+       DELETE (ÉTUDIANT)
        ===================================================== */
 
     @Transactional
@@ -130,13 +168,32 @@ public class LivrableService {
             throw new IllegalArgumentException("Suppression interdite");
         }
 
-        // ✅ FIX: supprimer les commentaires liés avant de supprimer le livrable
         commentaireRepo.deleteByLivrableId(id);
-
         fileStorage.delete(livrable.getCheminFichier());
         livrableRepo.delete(livrable);
 
         log.info("Livrable supprimé : id={}, étudiant={}", id, etudiantId);
+    }
+
+    /* =====================================================
+       DELETE BY ENCADRANT   ✅ FIX: méthode ajoutée
+       ===================================================== */
+
+    @Transactional
+    public void deleteByEncadrant(Long id, Principal principal) {
+        Long encadrantId = securityUtils.getCurrentUserId(principal);
+        Livrable livrable = findById(id);
+
+        Long encadrantDemande = livrable.getDemande().getEncadrantId();
+        if (encadrantDemande == null || !encadrantDemande.equals(encadrantId)) {
+            throw new IllegalArgumentException("Suppression interdite");
+        }
+
+        commentaireRepo.deleteByLivrableId(id);
+        fileStorage.delete(livrable.getCheminFichier());
+        livrableRepo.delete(livrable);
+
+        log.info("Livrable supprimé par encadrant : id={}, encadrant={}", id, encadrantId);
     }
 
     /* =====================================================

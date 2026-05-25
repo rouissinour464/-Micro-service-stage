@@ -34,15 +34,12 @@ public class DemandeStageService {
     private final ConcurrentHashMap<Long, String> nameCache =
             new ConcurrentHashMap<>();
 
-    /* =====================================================
-       ÉTUDIANT
-       ===================================================== */
+    // =========================================================
+    // ÉTUDIANT
+    // =========================================================
 
     @Transactional
-    public DemandeStageResponse soumettre(
-            DemandeStageRequest req,
-            Principal principal
-    ) {
+    public DemandeStageResponse soumettre(DemandeStageRequest req, Principal principal) {
         Long etudiantId = securityUtils.getCurrentUserId(principal);
 
         DemandeStage demande = new DemandeStage();
@@ -57,14 +54,56 @@ public class DemandeStageService {
         demande.setStatus(DemandeStatus.EN_ATTENTE);
 
         DemandeStage saved = demandeRepo.save(demande);
-        log.info("Nouvelle demande : id={}, étudiant={}", saved.getId(), etudiantId);
+        log.info("Nouvelle demande créée : id={}, étudiant={}", saved.getId(), etudiantId);
         return toResponse(saved);
+    }
+
+    @Transactional
+    public DemandeStageResponse update(Long id, DemandeStageRequest req, Principal principal) {
+        DemandeStage demande = findById(id);
+        Long etudiantId = securityUtils.getCurrentUserId(principal);
+
+        verifierProprietaire(demande.getEtudiantId(), etudiantId,
+                "Vous ne pouvez modifier que vos propres demandes.");
+        verifierStatut(demande, DemandeStatus.EN_ATTENTE,
+                "Impossible de modifier une demande déjà traitée.");
+
+        demande.setTitreProjet(req.getTitreProjet());
+        demande.setDescriptionProjet(req.getDescriptionProjet());
+        demande.setDomaine(req.getDomaine());
+        demande.setNiveau(req.getNiveau());
+        demande.setLieu(req.getLieu());
+        demande.setEntreprise(req.getEntreprise());
+
+        if (req.getImageDemandeUrl() != null && !req.getImageDemandeUrl().isBlank()) {
+            demande.setImageDemandeUrl(req.getImageDemandeUrl());
+        }
+
+        DemandeStage saved = demandeRepo.save(demande);
+        log.info("Demande {} modifiée par étudiant {}", id, etudiantId);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public void delete(Long id, Principal principal) {
+        DemandeStage demande = findById(id);
+        Long etudiantId = securityUtils.getCurrentUserId(principal);
+
+        verifierProprietaire(demande.getEtudiantId(), etudiantId,
+                "Vous ne pouvez supprimer que vos propres demandes.");
+        verifierStatut(demande, DemandeStatus.EN_ATTENTE,
+                "Impossible de supprimer une demande déjà traitée.");
+
+        demandeRepo.delete(demande);
+        log.info("Demande {} supprimée par étudiant {}", id, etudiantId);
     }
 
     public List<DemandeStageResponse> getMesDemandes(Principal principal) {
         Long etudiantId = securityUtils.getCurrentUserId(principal);
         return demandeRepo.findByEtudiantId(etudiantId)
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -76,17 +115,24 @@ public class DemandeStageService {
         DemandeStage demande = findById(demandeId);
         Long etudiantId = securityUtils.getCurrentUserId(principal);
 
-        if (!demande.getEtudiantId().equals(etudiantId))
-            throw new IllegalArgumentException("Accès interdit");
+        verifierProprietaire(demande.getEtudiantId(), etudiantId, "Accès interdit.");
 
-        if (demande.getStatus() != DemandeStatus.VALIDEE)
-            throw new IllegalStateException("Demande non validée");
+        if (demande.getStatus() != DemandeStatus.VALIDEE) {
+            throw new IllegalStateException(
+                    "Seule une demande validée peut recevoir un encadrant.");
+        }
 
-        if (demande.getEncadrantId() != null)
-            throw new IllegalStateException("Encadrant déjà choisi");
+        if (demande.getEncadrantId() != null) {
+            throw new IllegalStateException(
+                    "Un encadrant a déjà été attribué à cette demande.");
+        }
 
-        if (demandeRepo.countByEncadrantId(req.getEncadrantId()) >= MAX_ETUDIANTS_PAR_ENCADRANT)
-            throw new IllegalStateException("Capacité maximale atteinte");
+        long charge = demandeRepo.countByEncadrantId(req.getEncadrantId());
+        if (charge >= MAX_ETUDIANTS_PAR_ENCADRANT) {
+            throw new IllegalStateException(
+                    "Cet encadrant a atteint sa capacité maximale ("
+                    + MAX_ETUDIANTS_PAR_ENCADRANT + " étudiants).");
+        }
 
         demande.setEncadrantId(req.getEncadrantId());
         DemandeStage saved = demandeRepo.save(demande);
@@ -94,35 +140,43 @@ public class DemandeStageService {
         return toResponse(saved);
     }
 
-    /* =====================================================
-       ENCADRANT
-       ===================================================== */
+    // =========================================================
+    // ENCADRANT
+    // =========================================================
 
     public List<DemandeStageResponse> getMesEncadrements(Principal principal) {
         Long encadrantId = securityUtils.getCurrentUserId(principal);
         return demandeRepo.findByEncadrantId(encadrantId)
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
-    /* =====================================================
-       ADMIN
-       ===================================================== */
+    // =========================================================
+    // ADMIN
+    // =========================================================
 
     public List<DemandeStageResponse> getAllDemandes() {
-        return demandeRepo.findAll().stream().map(this::toResponse).toList();
+        return demandeRepo.findAll()
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     public List<DemandeStageResponse> getDemandesEnAttente() {
         return demandeRepo.findByStatus(DemandeStatus.EN_ATTENTE)
-                .stream().map(this::toResponse).toList();
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @Transactional
     public DemandeStageResponse valider(Long id, ValidationDemandeRequest req) {
         DemandeStage demande = findById(id);
 
-        if (demande.getStatus() != DemandeStatus.EN_ATTENTE)
-            throw new IllegalStateException("Demande déjà traitée");
+        if (demande.getStatus() != DemandeStatus.EN_ATTENTE) {
+            throw new IllegalStateException("Cette demande a déjà été traitée.");
+        }
 
         demande.setStatus(req.getStatus());
         demande.setCommentaireAdmin(req.getCommentaire());
@@ -133,17 +187,34 @@ public class DemandeStageService {
         return toResponse(saved);
     }
 
+    // =========================================================
+    // PUBLIC
+    // =========================================================
+
     public DemandeStageResponse getById(Long id) {
         return toResponse(findById(id));
     }
 
-    /* =====================================================
-       HELPERS
-       ===================================================== */
+    // =========================================================
+    // HELPERS PRIVÉS
+    // =========================================================
 
     private DemandeStage findById(Long id) {
         return demandeRepo.findById(id)
-                .orElseThrow(() -> new EntityNotFoundException("Demande introuvable : " + id));
+                .orElseThrow(() ->
+                        new EntityNotFoundException("Demande introuvable : " + id));
+    }
+
+    private void verifierProprietaire(Long ownerId, Long currentId, String message) {
+        if (!ownerId.equals(currentId)) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private void verifierStatut(DemandeStage demande, DemandeStatus attendu, String message) {
+        if (demande.getStatus() != attendu) {
+            throw new IllegalStateException(message);
+        }
     }
 
     private String getUserNom(Long userId, String fallbackPrefix) {
@@ -151,7 +222,9 @@ public class DemandeStageService {
         return nameCache.computeIfAbsent(userId, id -> {
             try {
                 String fullName = authClient.getUserById(id).getFullName();
-                if (fullName != null && !fullName.isBlank()) return fullName;
+                if (fullName != null && !fullName.isBlank()) {
+                    return fullName;
+                }
             } catch (Exception e) {
                 log.warn("getUserById({}) failed : {}", id, e.getMessage());
             }
@@ -159,9 +232,9 @@ public class DemandeStageService {
         });
     }
 
-    /* =====================================================
-       MAPPING
-       ===================================================== */
+    // =========================================================
+    // MAPPING DTO
+    // =========================================================
 
     private DemandeStageResponse toResponse(DemandeStage d) {
         return new DemandeStageResponse(
@@ -178,7 +251,7 @@ public class DemandeStageService {
                 d.getImageDemandeUrl(),
                 d.getCommentaireAdmin(),
                 d.getEncadrantId(),
-                getUserNom(d.getEncadrantId(), "Encadrant"), 
+                getUserNom(d.getEncadrantId(), "Encadrant"),
                 d.getDateValidation(),
                 d.getCreatedAt()
         );

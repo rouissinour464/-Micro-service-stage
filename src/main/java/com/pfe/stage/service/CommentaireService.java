@@ -52,7 +52,6 @@ public class CommentaireService {
     }
 
     // ── Lire commentaires d'un livrable ─────────────────────
-    // ✅ FIX: @Transactional garde la session JPA ouverte → résout LazyInitializationException
     @Transactional(readOnly = true)
     public List<CommentaireResponse> getByLivrable(Long livrableId) {
 
@@ -102,12 +101,12 @@ public class CommentaireService {
     }
 
     // ── Mapper ───────────────────────────────────────────────
-    // ✅ FIX: accès à livrable.getTitre() dans session ouverte grâce à @Transactional
     private CommentaireResponse toResponse(Commentaire c) {
         return new CommentaireResponse(
                 c.getId(),
                 c.getContenu(),
                 c.getEncadrantId(),
+                "Encadrant #" + c.getEncadrantId(),  // ✅ FIX: auteurNom ajouté
                 c.getLivrable().getId(),
                 c.getLivrable().getTitre(),
                 c.getCreatedAt()
