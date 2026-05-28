@@ -6,8 +6,9 @@ metadata:
 spec:
   replicas: 1
 
+  # ✅ éviter blocage PVC
   strategy:
-    type: Recreate   # ✅ éviter conflit PVC
+    type: Recreate
 
   selector:
     matchLabels:
@@ -23,6 +24,7 @@ spec:
         runAsUser: 0
         fsGroup: 0
 
+      # ✅ init container FIX
       initContainers:
         - name: init-uploads
           image: busybox
@@ -33,7 +35,7 @@ spec:
               mkdir -p /app/uploads/stage && chmod -R 777 /app/uploads
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads   # ✅ important
+              mountPath: /app/uploads
 
       containers:
         - name: stage-service
@@ -85,9 +87,9 @@ spec:
 
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads   # ✅ doit matcher init
+              mountPath: /app/uploads
 
-          # ✅ Startup (attendre que l'app démarre)
+          # ✅ startup OK
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -95,7 +97,7 @@ spec:
             failureThreshold: 60
             periodSeconds: 10
 
-          # ✅ FIX PRINCIPAL (READY)
+          # ✅ READY FIX
           readinessProbe:
             httpGet:
               path: /actuator/health
@@ -104,7 +106,7 @@ spec:
             periodSeconds: 15
             failureThreshold: 4
 
-          # ✅ FIX anti-restart
+          # ✅ stabilité
           livenessProbe:
             httpGet:
               path: /actuator/health
@@ -125,7 +127,6 @@ spec:
         - name: uploads-storage
           persistentVolumeClaim:
             claimName: uploads-pvc
-
 ---
 apiVersion: v1
 kind: Service
