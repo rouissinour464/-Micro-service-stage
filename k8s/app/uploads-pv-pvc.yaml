@@ -22,13 +22,9 @@ metadata:
   name: uploads-pvc
   namespace: gestion-projet
 spec:
-  # ✅ Doit correspondre exactement au storageClassName du PV ci-dessus
-  storageClassName: local-path
+  storageClassName: local-path   # K3s provisionne automatiquement
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 5Gi
-  selector:
-    matchLabels:
-      app: stage-service

@@ -14,8 +14,8 @@ spec:
         app: stage-service
     spec:
       securityContext:
-        runAsUser: 0
-        fsGroup: 0
+        runAsUser: 1000      # ✅ éviter root
+        fsGroup: 1000
 
       initContainers:
         - name: init-uploads
@@ -73,27 +73,28 @@ spec:
             - name: uploads-storage
               mountPath: /app/uploads/stage
 
+          # ✅ startupProbe : Spring Boot met du temps à démarrer
           startupProbe:
             httpGet:
               path: /actuator/health
               port: 8082
-            failureThreshold: 60
+            failureThreshold: 30    # ✅ réduit à 5 min (30 * 10s)
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/readiness   # ✅ endpoint dédié readiness
               port: 8082
-            initialDelaySeconds: 0
+            initialDelaySeconds: 10
             periodSeconds: 15
-            failureThreshold: 4
+            failureThreshold: 3
             successThreshold: 1
 
           livenessProbe:
             httpGet:
-              path: /actuator/health
+              path: /actuator/health/liveness    # ✅ endpoint dédié liveness
               port: 8082
-            initialDelaySeconds: 0
+            initialDelaySeconds: 10
             periodSeconds: 30
             failureThreshold: 3
 
@@ -109,12 +110,15 @@ spec:
         - name: uploads-storage
           persistentVolumeClaim:
             claimName: uploads-pvc
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: stage-service
   namespace: gestion-projet
+  labels:
+    app: stage-service
 spec:
   type: ClusterIP
   selector:
