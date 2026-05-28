@@ -83,13 +83,13 @@ pipeline {
             }
         }
 
-        ✅ FIX ICI 🔥
         stage('Update Kustomize Image') {
             steps {
                 sh '''
                     set -eux
                     echo "📝 Updating image in kustomization.yaml..."
 
+                    # ✅ remplace newTag proprement
                     sed -i "s|newTag:.*|newTag: ${TAG}|g" kustomization.yaml
                 '''
             }
@@ -103,10 +103,10 @@ pipeline {
                     echo "📦 Applying Kustomize..."
                     kubectl apply -k .
 
-                    echo "🧹 Cleanup old pods (fix PVC)..."
+                    echo "🧹 Cleaning old pods (fix PVC ReadWriteOnce)..."
                     kubectl delete pod -l app=stage-service -n ${NAMESPACE} --ignore-not-found=true
 
-                    echo "⏳ Waiting for rollout..."
+                    echo "⏳ Waiting rollout..."
                     kubectl rollout status deployment/stage-deployment \
                         -n ${NAMESPACE} \
                         --timeout=5m
@@ -136,9 +136,16 @@ pipeline {
             echo "❌ PIPELINE FAILED"
 
             sh '''
+                echo "📦 Pods:"
                 kubectl get pods -n ${NAMESPACE} || true
+
+                echo "📄 Describe:"
                 kubectl describe pods -n ${NAMESPACE} || true
+
+                echo "📜 Logs:"
                 kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=100 || true
+
+                echo "📢 Events:"
                 kubectl get events -n ${NAMESPACE} || true
             '''
         }
