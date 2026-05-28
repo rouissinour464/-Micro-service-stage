@@ -7,7 +7,7 @@ spec:
   replicas: 1
 
   strategy:
-    type: Recreate
+    type: Recreate   # ✅ éviter conflit PVC
 
   selector:
     matchLabels:
@@ -33,7 +33,7 @@ spec:
               mkdir -p /app/uploads/stage && chmod -R 777 /app/uploads
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads   # ✅ FIX (important)
+              mountPath: /app/uploads   # ✅ important
 
       containers:
         - name: stage-service
@@ -85,8 +85,9 @@ spec:
 
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads   # ✅ MUST MATCH INIT
+              mountPath: /app/uploads   # ✅ doit matcher init
 
+          # ✅ Startup (attendre que l'app démarre)
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -94,17 +95,21 @@ spec:
             failureThreshold: 60
             periodSeconds: 10
 
+          # ✅ FIX PRINCIPAL (READY)
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8082
+            initialDelaySeconds: 30
             periodSeconds: 15
             failureThreshold: 4
 
+          # ✅ FIX anti-restart
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8082
+            initialDelaySeconds: 60
             periodSeconds: 30
             failureThreshold: 3
 
