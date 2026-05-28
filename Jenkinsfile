@@ -89,8 +89,7 @@ pipeline {
                     set -eux
                     echo "📝 Updating image in kustomization.yaml..."
 
-                    # ✅ remplace newTag proprement
-                    sed -i "s|newTag:.*|newTag: ${TAG}|g" kustomization.yaml
+                    sed -i "s|newTag:.*|newTag: ${TAG}|g" k8s/app/kustomization.yaml
                 '''
             }
         }
@@ -101,9 +100,9 @@ pipeline {
                     set -eux
 
                     echo "📦 Applying Kustomize..."
-                    kubectl apply -k .
+                    kubectl apply -k k8s/app
 
-                    echo "🧹 Cleaning old pods (fix PVC ReadWriteOnce)..."
+                    echo "🧹 Cleaning old pods (fix PVC)..."
                     kubectl delete pod -l app=stage-service -n ${NAMESPACE} --ignore-not-found=true
 
                     echo "⏳ Waiting rollout..."
