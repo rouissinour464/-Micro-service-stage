@@ -8,6 +8,7 @@ pipeline {
 
     triggers {
         githubPush()
+        cron('H */6 * * *')
     }
 
     tools {
@@ -20,13 +21,14 @@ pipeline {
         TAG        = "${BUILD_NUMBER}"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
         NAMESPACE  = "gestion-projet"
-        DEPLOYMENT = "stage-deployment"
     }
 
     stages {
 
         stage('Checkout') {
-            steps { checkout scm }
+            steps {
+                checkout scm
+            }
         }
 
         stage('Build + Test') {
@@ -44,7 +46,7 @@ pipeline {
                 sh '''
                     set -eux
                     docker build -t ${IMAGE}:${TAG} .
-                    docker tag  ${IMAGE}:${TAG} ${IMAGE}:latest
+                    docker tag ${IMAGE}:${TAG} ${IMAGE}:latest
                 '''
             }
         }
@@ -81,25 +83,28 @@ pipeline {
             }
         }
 
+        stage('Update Kustomize Image') {
+            steps {
+                sh '''
+                    set -eux
+
+                    echo "📝 Update image in kustomization.yaml"
+
+                    kustomize edit set image ${IMAGE}=${IMAGE}:${TAG}
+                '''
+            }
+        }
+
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
                     set -eux
 
-                    echo "🚀 Updating deployment image..."
+                    echo "📦 Apply kustomize..."
+                    kubectl apply -k .
 
-                    kubectl set image deployment/${DEPLOYMENT} \
-                        stage-service=${IMAGE}:${TAG} \
-                        -n ${NAMESPACE}
-
-                    echo "🧹 Ensuring old pod is removed (RWO fix)..."
-
-                    # ✅ FIX: prevent PVC deadlock (important)
-                    kubectl rollout restart deployment/${DEPLOYMENT} -n ${NAMESPACE}
-
-                    echo "⏳ Waiting for rollout..."
-
-                    kubectl rollout status deployment/${DEPLOYMENT} \
+                    echo "⏳ Waiting rollout..."
+                    kubectl rollout status deployment/stage-deployment \
                         -n ${NAMESPACE} \
                         --timeout=5m
                 '''
@@ -128,16 +133,9 @@ pipeline {
             echo "❌ PIPELINE FAILED"
 
             sh '''
-                echo "📦 Pods:"
                 kubectl get pods -n ${NAMESPACE} || true
-
-                echo "📄 Describe pods:"
                 kubectl describe pods -n ${NAMESPACE} || true
-
-                echo "📜 Logs:"
                 kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=100 || true
-
-                echo "📢 Events:"
                 kubectl get events -n ${NAMESPACE} || true
             '''
         }

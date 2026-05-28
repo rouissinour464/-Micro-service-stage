@@ -8,3 +8,7 @@ resources:
   - configmap.yaml
   - uploads-pv-pvc.yaml
   - stage-deployment.yaml
+
+images:
+  - name: nour292/stage-service
+    newTag: latest
