@@ -6,7 +6,6 @@ metadata:
 spec:
   replicas: 1
 
-  # ✅ FIX: avoid PVC deadlock
   strategy:
     type: Recreate
 
@@ -30,10 +29,11 @@ spec:
           command:
             - sh
             - -c
-            - mkdir -p /app/uploads/stage && chmod 777 /app/uploads/stage
+            - |
+              mkdir -p /app/uploads/stage && chmod -R 777 /app/uploads
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads/stage
+              mountPath: /app/uploads   # ✅ FIX (important)
 
       containers:
         - name: stage-service
@@ -85,7 +85,7 @@ spec:
 
           volumeMounts:
             - name: uploads-storage
-              mountPath: /app/uploads/stage
+              mountPath: /app/uploads   # ✅ MUST MATCH INIT
 
           startupProbe:
             httpGet:
