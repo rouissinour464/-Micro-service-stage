@@ -1,28 +1,11 @@
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: uploads-pv
-  labels:
-    app: stage-service
-spec:
-  # ✅ local-path = provisioner natif K3s (rancher.io/local-path)
-  storageClassName: local-path
-  capacity:
-    storage: 5Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  hostPath:
-    path: /data/uploads/stage
-    type: DirectoryOrCreate
----
+# k8s/app/uploads-pvc.yaml — SEUL fichier de stockage nécessaire
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: uploads-pvc
   namespace: gestion-projet
 spec:
-  storageClassName: local-path   # K3s provisionne automatiquement
+  storageClassName: local-path
   accessModes:
     - ReadWriteOnce
   resources:
