@@ -1,30 +1,136 @@
-apiVersion: v1
-kind: PersistentVolume
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: uploads-pv
-  labels:
-    app: stage-service
-spec:
-  # ✅ local-path = provisioner natif K3s (rancher.io/local-path)
-  storageClassName: local-path
-  capacity:
-    storage: 5Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  hostPath:
-    path: /data/uploads/stage
-    type: DirectoryOrCreate
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: uploads-pvc
+  name: stage-deployment
   namespace: gestion-projet
 spec:
-  storageClassName: local-path   # K3s provisionne automatiquement
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
+  replicas: 1
+
+  # ✅ FIX: avoid PVC deadlock
+  strategy:
+    type: Recreate
+
+  selector:
+    matchLabels:
+      app: stage-service
+
+  template:
+    metadata:
+      labels:
+        app: stage-service
+
+    spec:
+      securityContext:
+        runAsUser: 0
+        fsGroup: 0
+
+      initContainers:
+        - name: init-uploads
+          image: busybox
+          command:
+            - sh
+            - -c
+            - mkdir -p /app/uploads/stage && chmod 777 /app/uploads/stage
+          volumeMounts:
+            - name: uploads-storage
+              mountPath: /app/uploads/stage
+
+      containers:
+        - name: stage-service
+          image: nour292/stage-service:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8082
+
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_URL
+
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_USERNAME
+
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: STAGE_DB_PASSWORD
+
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stage-secrets
+                  key: JWT_SECRET
+
+            - name: AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: stage-config
+                  key: AUTH_SERVICE_URL
+
+            - name: APP_UPLOAD_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: stage-config
+                  key: APP_UPLOAD_DIR
+
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Dapp.upload.dir=/app/uploads/stage"
+
+          volumeMounts:
+            - name: uploads-storage
+              mountPath: /app/uploads/stage
+
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            failureThreshold: 60
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            periodSeconds: 15
+            failureThreshold: 4
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            periodSeconds: 30
+            failureThreshold: 3
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
+      volumes:
+        - name: uploads-storage
+          persistentVolumeClaim:
+            claimName: uploads-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stage-service
+  namespace: gestion-projet
+spec:
+  type: ClusterIP
+  selector:
+    app: stage-service
+  ports:
+    - port: 8082
+      targetPort: 8082

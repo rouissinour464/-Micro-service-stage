@@ -8,8 +8,3 @@ resources:
   - configmap.yaml
   - uploads-pv-pvc.yaml
   - stage-deployment.yaml
-
-# ← ajouter ceci
-images:
-  - name: nour292/stage-service
-    newTag: "61"

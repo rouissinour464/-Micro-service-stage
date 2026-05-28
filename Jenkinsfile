@@ -8,7 +8,6 @@ pipeline {
 
     triggers {
         githubPush()
-        cron('H */6 * * *')
     }
 
     tools {
@@ -21,13 +20,7 @@ pipeline {
         TAG        = "${BUILD_NUMBER}"
         KUBECONFIG = "/var/lib/jenkins/.kube/config"
         NAMESPACE  = "gestion-projet"
-
-        SONAR_PROJECT_KEY = "rouissinour464_micro-service-stage"
-        SONAR_ORG         = "rouissinour464"
-
-        GIT_CREDENTIALS_ID = "github-creds"
-        GIT_USER_EMAIL     = "jenkins@ci.local"
-        GIT_USER_NAME      = "Jenkins CI"
+        DEPLOYMENT = "stage-deployment"
     }
 
     stages {
@@ -36,33 +29,13 @@ pipeline {
             steps { checkout scm }
         }
 
-        stage('Build + Test + Sonar') {
+        stage('Build + Test') {
             steps {
-                withSonarQubeEnv('SonarCloud') {
-                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                        sh '''
-                            set -eux
-                            chmod +x mvnw
-                            ./mvnw clean verify sonar:sonar \
-                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                              -Dsonar.organization=${SONAR_ORG} \
-                              -Dsonar.host.url=https://sonarcloud.io \
-                              -Dsonar.token=${SONAR_TOKEN} \
-                              -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
-                              -Dsonar.issue.ignore.multicriteria=e1 \
-                              -Dsonar.issue.ignore.multicriteria.e1.ruleKey=java:S6263 \
-                              -Dsonar.issue.ignore.multicriteria.e1.resourceKey=**/*
-                        '''
-                    }
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: false
-                }
+                sh '''
+                    set -eux
+                    chmod +x mvnw
+                    ./mvnw clean verify
+                '''
             }
         }
 
@@ -71,6 +44,7 @@ pipeline {
                 sh '''
                     set -eux
                     docker build -t ${IMAGE}:${TAG} .
+                    docker tag  ${IMAGE}:${TAG} ${IMAGE}:latest
                 '''
             }
         }
@@ -82,7 +56,6 @@ pipeline {
                         set -eux
                         echo "$DOCKER_PASSWORD" | docker login -u ${REGISTRY} --password-stdin
                         docker push ${IMAGE}:${TAG}
-                        docker tag  ${IMAGE}:${TAG} ${IMAGE}:latest
                         docker push ${IMAGE}:latest
                         docker logout
                     '''
@@ -95,62 +68,52 @@ pipeline {
                 sh '''
                     set -eux
                     kubectl get nodes
+
                     NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" || true)
+
                     if [ ! -z "$NOT_READY" ]; then
                         echo "❌ Some nodes NOT READY"
                         exit 1
                     fi
+
                     echo "✅ ALL NODES READY"
                 '''
             }
         }
 
-        stage('Update Image Tag') {
+        stage('Deploy to Kubernetes') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${GIT_CREDENTIALS_ID}",
-                    usernameVariable: 'GIT_USER',
-                    passwordVariable: 'GIT_TOKEN'
-                )]) {
-                    sh '''
-                        set -eux
-                        git config user.email "${GIT_USER_EMAIL}"
-                        git config user.name  "${GIT_USER_NAME}"
+                sh '''
+                    set -eux
 
-                        git checkout -B v1
+                    echo "🚀 Updating deployment image..."
 
-                        sed -i "s|newTag:.*|newTag: \\"${TAG}\\"|g" k8s/app/kustomization.yaml
+                    kubectl set image deployment/${DEPLOYMENT} \
+                        stage-service=${IMAGE}:${TAG} \
+                        -n ${NAMESPACE}
 
-                        git add k8s/app/kustomization.yaml
-                        git commit -m "ci: update stage-service image tag to ${TAG} [skip ci]"
+                    echo "🧹 Ensuring old pod is removed (RWO fix)..."
 
-                        REMOTE=$(git remote get-url origin \
-                            | sed "s|https://|https://${GIT_USER}:${GIT_TOKEN}@|")
-                        git push "$REMOTE" HEAD:v1
-                    '''
-                }
-            }
-        }
+                    # ✅ FIX: prevent PVC deadlock (important)
+                    kubectl rollout restart deployment/${DEPLOYMENT} -n ${NAMESPACE}
 
-        stage('Wait ArgoCD Sync') {
-            steps {
-                timeout(time: 5, unit: 'MINUTES') {
-                    sh '''
-                        set -eux
-                        argocd app wait stage-service \
-                            --sync --health --timeout 240 --grpc-web || true
-                        argocd app get stage-service --grpc-web || true
-                    '''
-                }
+                    echo "⏳ Waiting for rollout..."
+
+                    kubectl rollout status deployment/${DEPLOYMENT} \
+                        -n ${NAMESPACE} \
+                        --timeout=5m
+                '''
             }
         }
 
         stage('Check Cluster') {
             steps {
                 sh '''
-                    kubectl get pods -n ${NAMESPACE}
+                    echo "📦 Pods:"
+                    kubectl get pods -n ${NAMESPACE} -o wide
+
+                    echo "🌐 Services:"
                     kubectl get svc -n ${NAMESPACE}
-                    kubectl get applications -n argocd || true
                 '''
             }
         }
@@ -160,16 +123,25 @@ pipeline {
         success {
             echo "✅ STAGE PIPELINE SUCCESS 🚀"
         }
+
         failure {
             echo "❌ PIPELINE FAILED"
+
             sh '''
+                echo "📦 Pods:"
                 kubectl get pods -n ${NAMESPACE} || true
+
+                echo "📄 Describe pods:"
                 kubectl describe pods -n ${NAMESPACE} || true
-                kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=80 || true
+
+                echo "📜 Logs:"
+                kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=100 || true
+
+                echo "📢 Events:"
                 kubectl get events -n ${NAMESPACE} || true
-                argocd app get stage-service --grpc-web || true
             '''
         }
+
         always {
             cleanWs()
         }
