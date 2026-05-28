@@ -72,7 +72,6 @@ pipeline {
                     kubectl get nodes
 
                     NOT_READY=$(kubectl get nodes --no-headers | grep -v " Ready" || true)
-
                     if [ ! -z "$NOT_READY" ]; then
                         echo "❌ Some nodes NOT READY"
                         exit 1
@@ -89,7 +88,8 @@ pipeline {
                     set -eux
                     echo "📝 Updating image in kustomization.yaml..."
 
-                    sed -i "s|newTag:.*|newTag: ${TAG}|g" k8s/app/kustomization.yaml
+                    # ✅ FIX FINAL avec guillemets
+                    sed -i "s|newTag:.*|newTag: \\"${TAG}\\"|g" k8s/app/kustomization.yaml
                 '''
             }
         }
@@ -102,7 +102,7 @@ pipeline {
                     echo "📦 Applying Kustomize..."
                     kubectl apply -k k8s/app
 
-                    echo "🧹 Cleaning old pods (fix PVC)..."
+                    echo "🧹 Cleanup old pods (fix PVC)..."
                     kubectl delete pod -l app=stage-service -n ${NAMESPACE} --ignore-not-found=true
 
                     echo "⏳ Waiting rollout..."
@@ -135,16 +135,9 @@ pipeline {
             echo "❌ PIPELINE FAILED"
 
             sh '''
-                echo "📦 Pods:"
                 kubectl get pods -n ${NAMESPACE} || true
-
-                echo "📄 Describe:"
                 kubectl describe pods -n ${NAMESPACE} || true
-
-                echo "📜 Logs:"
                 kubectl logs -l app=stage-service -n ${NAMESPACE} --tail=100 || true
-
-                echo "📢 Events:"
                 kubectl get events -n ${NAMESPACE} || true
             '''
         }
