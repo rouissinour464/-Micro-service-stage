@@ -34,9 +34,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Tests unitaires
-        // ─────────────────────────────────────────
         stage('Unit Tests') {
             steps {
                 sh '''
@@ -52,9 +49,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Tests d'intégration
-        // ─────────────────────────────────────────
         stage('Integration Tests') {
             steps {
                 sh '''
@@ -64,9 +58,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Docker Build & Push
-        // ─────────────────────────────────────────
         stage('Docker Build & Push') {
             steps {
                 withCredentials([string(
@@ -90,9 +81,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Vérification cluster
-        // ─────────────────────────────────────────
         stage('Check Cluster') {
             steps {
                 sh '''
@@ -110,9 +98,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Mettre à jour le tag dans Git
-        // ─────────────────────────────────────────
         stage('Update Git Tag') {
             steps {
                 withCredentials([usernamePassword(
@@ -125,9 +110,13 @@ pipeline {
                         git config user.email "${GIT_USER_EMAIL}"
                         git config user.name  "${GIT_USER_NAME}"
 
-                        git checkout -B main
+                        REMOTE=$(git remote get-url origin \
+                            | sed "s|https://|https://${GIT_USER}:${GIT_TOKEN}@|")
 
-                        sed -i "s|newTag:.*|newTag: \\"${TAG}\\"|g" \
+                        git fetch "$REMOTE" v1
+                        git checkout -B v1 FETCH_HEAD
+
+                        sed -i 's|newTag:.*|newTag: "'"${TAG}"'"|g' \
                             k8s/app/kustomization.yaml
 
                         git add k8s/app/kustomization.yaml
@@ -136,17 +125,14 @@ pipeline {
 
                         git commit -m "ci: stage-service → ${TAG} [skip ci]"
 
-                        REMOTE=$(git remote get-url origin \
-                            | sed "s|https://|https://${GIT_USER}:${GIT_TOKEN}@|")
-                        git push "$REMOTE" HEAD:main --force-with-lease
+                        git push "$REMOTE" HEAD:v1 --force
+
+                        echo "Git mis à jour"
                     '''
                 }
             }
         }
 
-        // ─────────────────────────────────────────
-        // Deploy direct kubectl
-        // ─────────────────────────────────────────
         stage('Deploy to Kubernetes') {
             steps {
                 sh '''
@@ -180,9 +166,6 @@ pipeline {
             }
         }
 
-        // ─────────────────────────────────────────
-        // Vérification finale
-        // ─────────────────────────────────────────
         stage('Check Final') {
             steps {
                 sh '''
