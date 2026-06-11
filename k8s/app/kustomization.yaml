@@ -11,4 +11,4 @@ resources:
 
 images:
   - name: nour292/stage-service
-    newTag: "129"
+    newTag: "134"
